@@ -1,0 +1,67 @@
+name: Publish
+
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: "pages"
+    cancel-in-progress: false
+
+jobs:
+    Publish:
+        timeout-minutes: 10
+
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+
+        runs-on: ubuntu-latest
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Install Rust Nightly Toolchain, with Clippy & Rustfmt
+            - name: Install Rust
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: clippy, rustfmt
+
+            - name: Setup
+              run: |
+                  rustup target add wasm32-unknown-unknown
+                  curl -L --proto "=https" --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+                  cargo binstall -y trunk leptosfmt
+
+            - name: Test
+              run: |
+                  cargo test --all-targets --all-features
+                  cargo clippy --all-targets --all-features -- -D warnings
+                  cargo fmt --all
+
+            - name: Build
+              run: trunk build --release --public-url "/${GITHUB_REPOSITORY#*/}"
+
+            # Deploy with Github Static Pages
+
+            - name: Configure
+              uses: actions/configure-pages@v5
+              with:
+                  enablement: true
+                  # token:
+
+            - name: Upload
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  # Upload dist dir
+                  path: "./dist"
+
+            - name: Deploy
+              id: deployment
+              uses: actions/deploy-pages@v4
